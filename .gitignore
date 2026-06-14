@@ -1,0 +1,3 @@
+# ISOs — too large for git
+*.iso
+iso/
