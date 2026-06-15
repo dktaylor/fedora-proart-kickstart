@@ -103,7 +103,7 @@ Both `.cfg` files share the same structure:
 3. **Accounts** — root locked; `devuser` in `wheel,docker`; SSH key injection (Anaconda `sshkey` directive + `%post` fallback)
 4. **Bootloader / disk** — `clearpart --none` preserves Windows; reuses `nvme0n1p1` EFI without reformatting. *Auto* uses `part`/`volgroup`/`logvol`; *manual* pauses at Blivet-GUI.
 5. **`%packages`** — ~150 packages: KDE Plasma, PHP + extension build deps, MariaDB, PostgreSQL, Redis, Node.js, Python 3, Ansible, Docker prereqs, gaming libs, Asus hardware tools
-6. **`%post`** — 44 numbered steps in chroot + Ollama steps 42–44:
+6. **`%post`** — 45 numbered steps in chroot + Ollama/Hermes steps 42–45:
 
 | Steps | What happens |
 |-------|-------------|
@@ -122,6 +122,7 @@ Both `.cfg` files share the same structure:
 | 31–36 | PipeWire gaming tuning, GameMode daemon, GPU env flags, Lutris, fwupd, thermald |
 | 37–41 | XDG dirs, starship prompt, Tailscale, dnsmasq local dev DNS, Bun + Deno |
 | 42–44 | Ollama + Open WebUI container, backend-toggle scripts |
+| 45 | Hermes agent (local Ollama primary + Claude Opus brain alias) |
 
 ## Key design decisions
 

@@ -2105,6 +2105,19 @@ echo "=============================================="
 
 
 # ==============================================================================
+# [45] Hermes agent
+# ==============================================================================
+echo "[45] Installing Hermes agent..."
+echo "=============================================="
+HERMES_SETUP="${SCRIPT_DIR}/../hermes/setup-hermes.sh"
+if [[ -x "$HERMES_SETUP" ]]; then
+    bash "$HERMES_SETUP" "$TARGET_USER" "$(cd "${SCRIPT_DIR}/.." && pwd)"
+else
+    echo "  WARNING: $HERMES_SETUP not found — skipping Hermes install."
+    echo "  Run hermes/setup-hermes.sh manually after provisioning."
+fi
+
+# ==============================================================================
 # Run summary
 # ==============================================================================
 echo ""
