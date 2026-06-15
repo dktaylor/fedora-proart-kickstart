@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## RAG Integration Rules
+
+The project runs a local RAG stack (Ollama + Open WebUI at http://localhost:3000, knowledge base: **fedora-proart-kickstart**). Claude must treat it as a live knowledge layer:
+
+- **Read from RAG first** when starting work on any script or config — query the knowledge base for existing context, prior decisions, or related fixes before making changes.
+- **Write to RAG after significant changes** — after any meaningful fix, new script, architectural decision, or session, upload the updated file or a summary doc to the knowledge base. Use the naming convention: `NN-category--filename` (e.g. `01-sessions--2026-06-14-summary.md`, `03-scripts--verify.sh`).
+- **Session summaries are mandatory** — at the end of every working session, generate a `docs/sessions/YYYY-MM-DD-summary.md` and upload it to RAG under `01-sessions--`.
+- **Both Claude and Ollama use the same knowledge base** — changes written to RAG are available to the local Ollama model in Open WebUI, closing the learning loop.
+
 ## What this repo is
 
 A set of bash scripts and Anaconda kickstart configs that build a custom Fedora 44 Everything netinstall ISO. Target machine: **Asus ProArt 16 7606WV** (AMD Ryzen AI iGPU + Nvidia RTX 4060 hybrid, 4 TB NVMe, dual-boot alongside Windows).
@@ -10,32 +19,47 @@ Profile installed: PHP/Symfony/Drupal dev + DevOps + gaming on KDE Plasma.
 
 **Current status: Fedora 44 KDE is already installed and running on bare metal.** The ISO build pipeline here is for re-provisioning / future machines.
 
-## Files
+## Directory structure
 
-All project files live in `~/fedora-build/`:
-
-| File | Purpose |
-|------|---------|
-| `fetch-fedora-iso.sh` | Download & SHA-256-verify the base Fedora 44 Everything netinstall ISO into `./iso/` |
-| `build-fedora-ks-iso.sh` | Embed a kickstart into the ISO to produce a bootable unattended-install image |
-| `fedora-ks.cfg` | Kickstart — **auto-partitioning** (LVM created by Anaconda) |
-| `fedora-ks-manualpart.cfg` | Kickstart — **manual partitioning** (Blivet-GUI; use when disk has leftover LVM metadata) |
-| `fedora-project-context.sh` | Project state summary; `source` it to load shell functions and aliases |
-| `fedora-postinstall-setup.sh` | Standalone 44-step setup script (run after a fresh install, outside kickstart) |
-| `verify.sh` | Comprehensive provisioning status checker (63+ assertions) |
-| `ollama-gpu-mode.sh` | Switch between local GPU inference and remote desktop inference |
+```
+fedora-proart-kickstart/
+├── fedora-project-context.sh    # source this to load shell env + helper functions
+├── kickstart/                   # Anaconda kickstart configs
+│   ├── fedora-ks-auto.cfg       # Auto-partitioning (bare metal, unallocated space)
+│   ├── fedora-ks-manual.cfg     # Manual partitioning via Blivet-GUI
+│   └── fedora-ks-vm.cfg         # VM testing variant (vda, clearpart --all)
+├── scripts/                     # Operational scripts
+│   ├── fetch-fedora-iso.sh      # Download + SHA-256-verify base ISO into iso/
+│   ├── build-fedora-ks-iso.sh   # Embed KS into ISO (auto|manual|vm modes)
+│   ├── fedora-postinstall-setup.sh  # Standalone 44-step post-install setup
+│   ├── verify.sh                # 63+ provisioning checks
+│   └── ollama-gpu-mode.sh       # Switch Ollama between local GPU and remote
+├── testing/                     # Test harnesses
+│   ├── test-vm.sh               # KVM/QEMU full kickstart test runner
+│   └── test-postinstall.sh      # Podman container postinstall test runner
+├── hermes/                      # Hermes agent integration
+│   ├── setup-hermes.sh          # Install + configure Hermes
+│   ├── context.md               # Project context injected into every Hermes session
+│   └── mcp/                     # Phase 2: MCP server bridging Hermes to RAG
+│       └── openwebui-mcp.py
+├── docs/sessions/               # Session summaries (uploaded to RAG after each session)
+└── iso/                         # gitignored — downloaded base ISO + built custom ISOs
+```
 
 ## ISO build workflow
 
 ```bash
 # Step 1 — fetch base ISO (idempotent; skips re-download if checksum passes)
-./fetch-fedora-iso.sh -v 44
+./scripts/fetch-fedora-iso.sh -v 44
 
-# Step 2a — auto-partitioning kickstart
-./build-fedora-ks-iso.sh auto    # writes fedora-everything-ks.iso
+# Step 2a — auto-partitioning kickstart (bare metal)
+./scripts/build-fedora-ks-iso.sh auto    # writes fedora-everything-ks.iso
 
-# Step 2b — manual-partitioning kickstart
-./build-fedora-ks-iso.sh manual  # writes fedora-everything-ks-manual.iso
+# Step 2b — manual-partitioning kickstart (bare metal, disk has leftover LVM)
+./scripts/build-fedora-ks-iso.sh manual  # writes fedora-everything-ks-manual.iso
+
+# Step 2c — VM testing kickstart
+./scripts/build-fedora-ks-iso.sh vm      # writes fedora-everything-ks-vm.iso
 
 # Flash to USB (replace /dev/sdX)
 sudo dd if=fedora-everything-ks.iso of=/dev/sdX bs=4M status=progress
@@ -46,9 +70,9 @@ Requires: `xorriso` and `mkisofs` (`dnf install xorriso`). The build script moun
 ## Verification
 
 ```bash
-./verify.sh             # full report (63+ checks)
-./verify.sh --quiet     # FAIL lines + summary only
-./verify.sh --no-hw     # skip GPU/Asus hardware checks (VM mode)
+./scripts/verify.sh             # full report (63+ checks)
+./scripts/verify.sh --quiet     # FAIL lines + summary only
+./scripts/verify.sh --no-hw     # skip GPU/Asus hardware checks (VM mode)
 ```
 
 Hardware checks (Nvidia, AMD, Asus) auto-SKIP when the hardware isn't detected, so this works cleanly in a VM. Must run as `devuser`, not root — many tools live in per-user dirs (`~/.nvm`, `~/.local`, etc.).
@@ -62,8 +86,8 @@ Hardware checks (Nvidia, AMD, Asus) auto-SKIP when the hardware isn't detected, 
 
 Switch inference backends:
 ```bash
-sudo ./ollama-gpu-mode.sh local    # Hybrid GPU + local RTX 4060 CUDA
-sudo ./ollama-gpu-mode.sh remote   # Integrated GPU + remote desktop over Tailscale
+sudo ./scripts/ollama-gpu-mode.sh local    # Hybrid GPU + local RTX 4060 CUDA
+sudo ./scripts/ollama-gpu-mode.sh remote   # Integrated GPU + remote desktop over Tailscale
 ```
 
 `local` mode: sets supergfxctl to Hybrid, starts Ollama daemon on dGPU, Open WebUI → localhost:11434.  

@@ -16,8 +16,12 @@ export FEDORA_VERSION="44"
 
 # Key directories
 export FEDORA_BUILD_DIR="$HOME/fedora-build"
-export SCRIPTS_DIR="$FEDORA_BUILD_DIR"
+export SCRIPTS_DIR="$FEDORA_BUILD_DIR/scripts"
+export KS_DIR="$FEDORA_BUILD_DIR/kickstart"
 export ISO_DIR="$FEDORA_BUILD_DIR/iso"
+export TESTING_DIR="$FEDORA_BUILD_DIR/testing"
+export HERMES_DIR="$FEDORA_BUILD_DIR/hermes"
+export DOCS_DIR="$FEDORA_BUILD_DIR/docs"
 export OUTPUT_DIR="$HOME/.local/share/fedora-builds"
 
 # ISO information
@@ -25,10 +29,12 @@ export ISO_FILENAME="Fedora-Everything-netinst-x86_64-44-1.7.iso"
 export ISO_PATH="$ISO_DIR/$ISO_FILENAME"
 export CUSTOM_ISO_AUTO="$FEDORA_BUILD_DIR/fedora-everything-ks.iso"
 export CUSTOM_ISO_MANUAL="$FEDORA_BUILD_DIR/fedora-everything-ks-manual.iso"
+export CUSTOM_ISO_VM="$FEDORA_BUILD_DIR/fedora-everything-ks-vm.iso"
 
 # Kickstart files
-export KS_AUTO="$SCRIPTS_DIR/fedora-ks.cfg"
-export KS_MANUAL="$SCRIPTS_DIR/fedora-ks-manualpart.cfg"
+export KS_AUTO="$KS_DIR/fedora-ks-auto.cfg"
+export KS_MANUAL="$KS_DIR/fedora-ks-manual.cfg"
+export KS_VM="$KS_DIR/fedora-ks-vm.cfg"
 
 # Build scripts
 export BUILD_SCRIPT="$SCRIPTS_DIR/build-fedora-ks-iso.sh"
@@ -122,6 +128,10 @@ build_iso_auto() {
 
 build_iso_manual() {
     cd "$FEDORA_BUILD_DIR" && bash "$BUILD_SCRIPT" manual
+}
+
+build_iso_vm() {
+    cd "$FEDORA_BUILD_DIR" && bash "$BUILD_SCRIPT" vm
 }
 
 # Flash ISO to USB (REQUIRES: device path)

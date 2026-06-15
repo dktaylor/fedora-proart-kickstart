@@ -3,8 +3,9 @@
 # build-fedora-ks-iso.sh — embed kickstart into Fedora ISO for unattended install
 # ==============================================================================
 # Usage:
-#   ./build-fedora-ks-iso.sh auto       # auto-partitioning kickstart
-#   ./build-fedora-ks-iso.sh manual     # manual LVM partitioning
+#   ./scripts/build-fedora-ks-iso.sh auto       # auto-partitioning kickstart
+#   ./scripts/build-fedora-ks-iso.sh manual     # manual LVM partitioning
+#   ./scripts/build-fedora-ks-iso.sh vm         # VM testing (vda, clearpart --all)
 #
 # Requirements:
 #   - xorriso and mkisofs (dnf install xorriso)
@@ -14,10 +15,12 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KS_AUTO="$SCRIPT_DIR/fedora-ks.cfg"
-KS_MANUAL="$SCRIPT_DIR/fedora-ks-manualpart.cfg"
-ISO_DIR="$SCRIPT_DIR/iso"
-WORK_DIR="${WORK_DIR:-.}"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+KS_AUTO="$REPO_ROOT/kickstart/fedora-ks-auto.cfg"
+KS_MANUAL="$REPO_ROOT/kickstart/fedora-ks-manual.cfg"
+KS_VM="$REPO_ROOT/kickstart/fedora-ks-vm.cfg"
+ISO_DIR="$REPO_ROOT/iso"
+WORK_DIR="${WORK_DIR:-$REPO_ROOT}"
 
 if [[ -t 1 ]]; then
     B=$'\e[1m'; G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; X=$'\e[0m'
@@ -34,9 +37,10 @@ die()  { err "$*"; exit 1; }
 # Parse mode
 MODE="${1:-}"
 case "$MODE" in
-    auto)   KS_FILE="$KS_AUTO"; OUTPUT="$(cd "$WORK_DIR" && pwd)/fedora-everything-ks.iso" ;;
+    auto)   KS_FILE="$KS_AUTO";   OUTPUT="$(cd "$WORK_DIR" && pwd)/fedora-everything-ks.iso" ;;
     manual) KS_FILE="$KS_MANUAL"; OUTPUT="$(cd "$WORK_DIR" && pwd)/fedora-everything-ks-manual.iso" ;;
-    *)      echo "Usage: $0 {auto|manual}"; exit 1 ;;
+    vm)     KS_FILE="$KS_VM";     OUTPUT="$(cd "$WORK_DIR" && pwd)/fedora-everything-ks-vm.iso" ;;
+    *)      echo "Usage: $0 {auto|manual|vm}"; exit 1 ;;
 esac
 
 [[ -f "$KS_FILE" ]] || die "Kickstart not found: $KS_FILE"

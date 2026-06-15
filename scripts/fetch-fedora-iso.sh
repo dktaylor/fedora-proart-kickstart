@@ -24,7 +24,8 @@ set -euo pipefail
 # ----- defaults -----
 FEDORA_VERSION=""                 # empty = auto-detect latest stable
 ARCH="x86_64"
-OUTDIR="./iso"
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUTDIR="${_SCRIPT_DIR}/../iso"
 VERIFY=1
 GPG_CHECK=1
 
