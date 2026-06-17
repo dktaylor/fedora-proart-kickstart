@@ -320,6 +320,22 @@ else
     skip "Asus checks — not an Asus chassis"
 fi
 
+hdr "GPU default: iGPU rendering policy"
+KWIN_ENV="$HOME/.config/plasma-workspace/env/kwin-gpu.sh"
+if [[ -f "$KWIN_ENV" ]]; then
+    grep -q "KWIN_DRM_DEVICES=/dev/dri/card1" "$KWIN_ENV" \
+        && ok "KWin bound to AMD iGPU (card1)" \
+        || bad "kwin-gpu.sh present but KWIN_DRM_DEVICES not set to card1"
+    grep -q "__EGL_VENDOR_LIBRARY_FILENAMES.*50_mesa" "$KWIN_ENV" \
+        && ok "EGL vendor forced to Mesa (AMD)" \
+        || bad "kwin-gpu.sh present but __EGL_VENDOR_LIBRARY_FILENAMES not set to Mesa"
+    grep -q "__GLX_VENDOR_LIBRARY_NAME=mesa" "$KWIN_ENV" \
+        && ok "GLX vendor forced to Mesa (AMD)" \
+        || bad "kwin-gpu.sh present but __GLX_VENDOR_LIBRARY_NAME not set to mesa"
+else
+    bad "~/.config/plasma-workspace/env/kwin-gpu.sh missing — apps may default to Nvidia GPU"
+fi
+
 # ==============================================================================
 # SUMMARY
 # ==============================================================================

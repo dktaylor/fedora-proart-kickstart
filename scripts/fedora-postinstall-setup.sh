@@ -289,6 +289,19 @@ Categories=System;
 Comment=Switch to Nvidia-only mode (RTX 4060 drives display, best gaming)
 NVDE
 
+# Default all KDE/app rendering to AMD iGPU — RTX 4060 reserved for CUDA/Ollama
+# and explicit prime-run. Takes effect at next KDE login.
+# card0 = Nvidia (RTX 4060), card1 = AMD iGPU on this machine.
+# Override per-app with: prime-run <app>  OR  prime-run %command% in Steam
+mkdir -p /home/devuser/.config/plasma-workspace/env
+cat > /home/devuser/.config/plasma-workspace/env/kwin-gpu.sh << 'KWINENV'
+# Default all rendering to AMD iGPU — RTX 4060 reserved for CUDA/Ollama and explicit prime-run
+export KWIN_DRM_DEVICES=/dev/dri/card1
+export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+export __GLX_VENDOR_LIBRARY_NAME=mesa
+KWINENV
+chown -R devuser:devuser /home/devuser/.config/plasma-workspace
+
 # ------------------------------------------------------------------------------
 # Steam
 # ------------------------------------------------------------------------------
