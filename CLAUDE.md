@@ -4,12 +4,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## RAG Integration Rules
 
-The project runs a local RAG stack (Ollama + Open WebUI at http://localhost:3000, knowledge base: **fedora-proart-kickstart**). Claude must treat it as a live knowledge layer:
+The project runs a local RAG stack (Ollama + Open WebUI at http://localhost:3000). Claude has live access via MCP tools: `rag_search`, `rag_add_doc`, `rag_add_issue`, `rag_index_project`, `rag_list_kbs`.
 
-- **Read from RAG first** when starting work on any script or config — query the knowledge base for existing context, prior decisions, or related fixes before making changes.
-- **Write to RAG after significant changes** — after any meaningful fix, new script, architectural decision, or session, upload the updated file or a summary doc to the knowledge base. Use the naming convention: `NN-category--filename` (e.g. `01-sessions--2026-06-14-summary.md`, `03-scripts--verify.sh`).
-- **Session summaries are mandatory** — at the end of every working session, generate a `docs/sessions/YYYY-MM-DD-summary.md` and upload it to RAG under `01-sessions--`.
-- **Both Claude and Ollama use the same knowledge base** — changes written to RAG are available to the local Ollama model in Open WebUI, closing the learning loop.
+### Four-tier knowledge structure
+
+| Tier | KB name | Contains |
+|------|---------|---------|
+| 1 | `framework-{name}` | PHP framework/CMS reference — Drupal, Symfony, WordPress, CakePHP, Laravel |
+| 2 | `project-{slug}` | Per-project source code + project-specific devops/config |
+| 3 | `common-issues` | Cross-cutting gotchas, bugs, non-obvious fixes (all stacks) |
+| 4 | `devops-general` | Infrastructure reference — Docker, k8s, Linux, nginx, SSL, OS patterns |
+
+This project's provisioning docs live in `project-fedora-proart` (Tier 2).
+
+### Excluded paths — never read directly
+
+Do not read or analyze these paths. Use `rag_search(tier="framework")` instead:
+- `vendor/`
+- `web/core/`
+- `node_modules/`
+- `var/cache/`
+
+### Rules
+
+- **Search RAG first** before any coding task: `rag_search(query, framework=<detected>, project=<detected>)`
+- **Default tiers**: `["framework", "project", "common-issues"]` — add `"devops-general"` for infrastructure topics
+- **After solving something non-obvious**: call `rag_add_issue()` immediately with tags — don't wait for session end
+- **After significant file changes**: call `rag_add_doc(tier="project")` with naming convention `NN-category--filename`
+- **Session summaries are mandatory**: generate `docs/sessions/YYYY-MM-DD-summary.md` and upload via `rag_add_doc(tier="project")`
+- **Both Claude and Hermes use the same KBs** — knowledge written here is available to the local Ollama model in Open WebUI
+
+### OS context
+
+OS-specific knowledge belongs in Tier 4 (`devops-general`) only. Search Tier 4 alongside other tiers when the query involves infrastructure, system config, or OS behaviour — tiers combine naturally.
 
 ## What this repo is
 
