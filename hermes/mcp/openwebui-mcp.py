@@ -12,7 +12,7 @@ Configuration via environment variables (set in Hermes mcp_servers config):
   OPENWEBUI_TOKEN  — JWT auth token
   OPENWEBUI_KB_ID  — knowledge base UUID
 
-MCP stdio transport: Content-Length framed JSON-RPC 2.0 (LSP-style).
+MCP stdio transport: newline-delimited JSON-RPC 2.0 (Hermes v0.16 uses NDJSON).
 """
 
 import json
@@ -183,31 +183,22 @@ TOOL_FNS = {
 }
 
 # ---------------------------------------------------------------------------
-# MCP stdio transport (Content-Length framed JSON-RPC 2.0)
+# MCP stdio transport (newline-delimited JSON — Hermes v0.16 NDJSON format)
 # ---------------------------------------------------------------------------
 
 def send(msg: dict):
-    body = json.dumps(msg).encode()
-    sys.stdout.buffer.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
-    sys.stdout.buffer.flush()
+    sys.stdout.write(json.dumps(msg) + "\n")
+    sys.stdout.flush()
 
 
 def recv() -> dict | None:
-    headers = {}
-    while True:
-        line = sys.stdin.buffer.readline()
-        if not line:
-            return None
-        line = line.rstrip(b"\r\n")
-        if not line:
-            break
-        if b":" in line:
-            k, v = line.split(b":", 1)
-            headers[k.strip().lower()] = v.strip()
-    length = int(headers.get(b"content-length", 0))
-    if not length:
+    line = sys.stdin.readline()
+    if not line:
         return None
-    return json.loads(sys.stdin.buffer.read(length))
+    line = line.strip()
+    if not line:
+        return None
+    return json.loads(line)
 
 
 def handle(req: dict) -> dict | None:
@@ -218,7 +209,7 @@ def handle(req: dict) -> dict | None:
         return {
             "jsonrpc": "2.0", "id": rid,
             "result": {
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": "2025-11-25",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "openwebui-mcp", "version": "1.0.0"},
             },
