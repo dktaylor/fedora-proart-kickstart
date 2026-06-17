@@ -1,0 +1,12 @@
+# Add this block to ~/.hermes/config.yaml under the top-level mcp_servers key.
+# Replace <your-token> with the JWT from Open WebUI → Settings → Account → API Keys.
+
+mcp_servers:
+  openwebui-rag:
+    command: python3
+    args: ["/path/to/rag-stack/mcp/openwebui-mcp.py"]
+    env:
+      OPENWEBUI_URL:   "http://localhost:3000"
+      OPENWEBUI_TOKEN: "<your-token>"
+      RAG_CWD_DETECT:  "1"
+    timeout: 60

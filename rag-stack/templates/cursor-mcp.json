@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "openwebui-rag": {
+      "command": "python3",
+      "args": ["/path/to/rag-stack/mcp/openwebui-mcp.py"],
+      "env": {
+        "OPENWEBUI_URL":   "http://localhost:3000",
+        "OPENWEBUI_TOKEN": "<replace-with-token-from-openwebui-settings>",
+        "RAG_CWD_DETECT":  "1"
+      }
+    }
+  }
+}
