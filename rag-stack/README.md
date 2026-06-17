@@ -27,6 +27,31 @@ Qdrant      :6333         ← vector storage + similarity search
 | 3 | `common-issues` | Cross-cutting bugs, gotchas, non-obvious fixes |
 | 4 | `devops-general` | Infrastructure — Docker, k8s, Linux, nginx, SSL |
 
+## Let Claude Code set this up for you
+
+Open a Claude Code session in the directory where you've cloned this repo and paste the following prompt. Claude will walk through every step interactively — starting the stack, getting your token, registering the MCP server, and indexing your first project.
+
+```
+I want to set up the openwebui-rag-mcp four-tier RAG stack in this directory.
+The repo contains: docker-compose.yml (Open WebUI + Qdrant), mcp/openwebui-mcp.py
+(the MCP server), .env.example, and docs/ with setup guides.
+
+Please do the following in order:
+1. Copy .env.example to .env and ask me for my OLLAMA_BASE_URL if Ollama isn't
+   running on localhost:11434.
+2. Run `docker compose up -d` and confirm both containers are healthy.
+3. Tell me to open http://localhost:3000, create an account, and generate an API
+   token at Settings → Account → API Keys. Wait for me to paste the token back.
+4. Write the token into .env as OPENWEBUI_TOKEN.
+5. Register the MCP server with Claude Code at user scope using `claude mcp add`,
+   substituting the absolute path to mcp/openwebui-mcp.py and the token from .env.
+6. Verify the MCP server is connected with `claude mcp list`.
+7. Ask me which project I want to index first, then call rag_index_project() with
+   that path.
+8. Run rag_list_kbs() to confirm the project KB was created.
+9. Show me the web interface URLs and confirm everything is working.
+```
+
 ## Quick start
 
 ```bash
