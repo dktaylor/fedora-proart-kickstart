@@ -2134,6 +2134,40 @@ else
 fi
 
 # ==============================================================================
+# [46] rag-stack — Open WebUI + Qdrant + RAG CLI
+# ==============================================================================
+# All tooling lives in https://github.com/dktaylor/rag-stack.
+# This step clones it to /opt/rag-stack-src and runs its install.sh, which:
+#   - Deploys the compose file + MCP server to /opt/rag-stack
+#   - Installs 'rag' CLI to /usr/local/bin
+#   - Installs rag-stack.service (disabled; started on demand with 'rag start')
+#   - Removes any conflicting standalone open-webui container
+# The stack is NOT started here — run 'rag start' after first boot.
+# ==============================================================================
+echo "[46] Deploying rag-stack..."
+echo "=============================================="
+RAG_STACK_REPO="https://github.com/dktaylor/rag-stack.git"
+RAG_SRC="/opt/rag-stack-src"
+export RAG_INSTALL_DIR="/opt/rag-stack"
+
+if [ -d "$RAG_SRC/.git" ]; then
+    echo "  Updating existing rag-stack source..."
+    git -C "$RAG_SRC" pull --ff-only || true
+else
+    echo "  Cloning $RAG_STACK_REPO..."
+    git clone "$RAG_STACK_REPO" "$RAG_SRC" || {
+        echo "  WARNING: rag-stack clone failed — install manually after boot:"
+        echo "    git clone $RAG_STACK_REPO $RAG_SRC"
+        echo "    RAG_INSTALL_DIR=$RAG_INSTALL_DIR bash $RAG_SRC/scripts/install.sh"
+        FAILED_STEPS+=("[46] rag-stack")
+    }
+fi
+
+if [ -d "$RAG_SRC" ]; then
+    bash "$RAG_SRC/scripts/install.sh"
+fi
+
+# ==============================================================================
 # Run summary
 # ==============================================================================
 echo ""
