@@ -1,0 +1,19 @@
+Collection: php-codebase
+ └── Point Array (Vectors)
+      ├── TIER 1: GLOBAL FRAMEWORK LAYER
+      │    ├── Vector: [1024 dimensions]
+      │    └── Payload: {
+      │          "framework": "drupal",          <-- Used to filter globally
+      │          "project": "global-docs",
+      │          "file_path": "drupal_11_plugin_api.md",
+      │          "content": "class MyBlock extends BlockBase..."
+      │        }
+      │
+      └── TIER 2: LOCAL PROJECT LAYER
+           ├── Vector: [1024 dimensions]
+           └── Payload: {
+                 "framework": "drupal",
+                 "project": "client-alpha-site", <-- Matches your active folder name
+                 "file_path": "./web/modules/custom/my_module/src/Plugin/Block/CustomBlock.php",
+                 "content": "public function build() { ... }"
+               }

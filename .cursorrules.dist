@@ -1,0 +1,8 @@
+# Local AI Compliance Rules
+Never analyze or pull content from the following pathways:
+- /vendor/*
+- /var/cache/*
+- /web/core/*
+- /node_modules/*
+
+If you need a framework class contract definition, request a snippet lookup from the Qdrant Framework RAG collection instead of parsing local vendor text streams.

@@ -1,0 +1,6 @@
+auxiliary:
+  compression:
+    model: "qwen2.5-coder:1.5b"
+    context_length: 64000
+compression:
+  threshold: 0.50
