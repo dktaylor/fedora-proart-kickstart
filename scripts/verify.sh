@@ -245,9 +245,19 @@ if have ollama; then
 else
     bad "ollama CLI — not on PATH"
 fi
-have docker && docker inspect open-webui >/dev/null 2>&1 && \
-    ok "Open WebUI container running (http://localhost:3000)" || \
-    bad "Open WebUI container — not running"
+check_file /usr/local/bin/rag "rag CLI"
+check_file /opt/rag-stack/docker-compose.yml "rag-stack compose file"
+[[ -d /opt/rag-stack/data/qdrant ]] && \
+    ok "Qdrant data dir (/opt/rag-stack/data/qdrant)" || \
+    bad "Qdrant data dir — missing (run: rag start)"
+[[ -d /opt/rag-stack/data/webui ]] && \
+    ok "Open WebUI data dir (/opt/rag-stack/data/webui)" || \
+    bad "Open WebUI data dir — missing (run: rag start)"
+if have docker && docker inspect open-webui >/dev/null 2>&1; then
+    ok "Open WebUI container running (http://localhost:3000)"
+else
+    skip "Open WebUI not running — start with: rag start"
+fi
 check_file /usr/local/bin/ollama-backend "ollama-backend script"
 check_file /usr/local/bin/ollama-local "ollama-local script (GPU mode)"
 check_file /usr/local/bin/ollama-remote "ollama-remote script (GPU mode)"

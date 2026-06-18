@@ -1728,16 +1728,7 @@ reconfigure_webui() {
             && ok "Open WebUI -> ${base_url}  (http://localhost:${WEBUI_PORT})" \
             || warn "Open WebUI restart failed."
     else
-        # Fallback: standalone container (rag-stack not installed)
-        docker inspect "$WEBUI_CONTAINER" >/dev/null 2>&1 && docker rm -f "$WEBUI_CONTAINER" >/dev/null
-        docker run -d -p "${WEBUI_PORT}:8080" \
-            --add-host=host.docker.internal:host-gateway \
-            -e OLLAMA_BASE_URL="$base_url" \
-            -v open-webui:/app/backend/data \
-            --name "$WEBUI_CONTAINER" --restart unless-stopped \
-            "$WEBUI_IMAGE" >/dev/null \
-            && ok "Open WebUI -> ${base_url}  (http://localhost:${WEBUI_PORT})" \
-            || warn "Open WebUI restart failed."
+        warn "rag-stack not installed at /opt/rag-stack — WebUI repoint skipped."
     fi
 }
 
@@ -1848,13 +1839,7 @@ have docker && docker info >/dev/null 2>&1 && {
             || echo "OLLAMA_BASE_URL=http://host.docker.internal:11434" >> "$env_file"
         docker compose -f "$compose_file" up -d --force-recreate open-webui >/dev/null 2>&1
     else
-        docker inspect "$WEBUI_CONTAINER" >/dev/null 2>&1 && docker rm -f "$WEBUI_CONTAINER" >/dev/null
-        docker run -d -p "${WEBUI_PORT}:8080" \
-            --add-host=host.docker.internal:host-gateway \
-            -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
-            -v open-webui:/app/backend/data \
-            --name "$WEBUI_CONTAINER" --restart unless-stopped \
-            "$WEBUI_IMAGE" >/dev/null
+        warn "rag-stack not installed at /opt/rag-stack — WebUI repoint skipped."
     fi
     ok "Open WebUI -> localhost:11434  (http://localhost:${WEBUI_PORT})"
 }
@@ -1930,12 +1915,7 @@ have docker && docker info >/dev/null 2>&1 && {
             || echo "OLLAMA_BASE_URL=${webui_target}" >> "$env_file"
         docker compose -f "$compose_file" up -d --force-recreate open-webui >/dev/null 2>&1
     else
-        docker inspect "$WEBUI_CONTAINER" >/dev/null 2>&1 && docker rm -f "$WEBUI_CONTAINER" >/dev/null
-        docker run -d -p "${WEBUI_PORT}:8080" \
-            -e OLLAMA_BASE_URL="$webui_target" \
-            -v open-webui:/app/backend/data \
-            --name "$WEBUI_CONTAINER" --restart unless-stopped \
-            "$WEBUI_IMAGE" >/dev/null
+        warn "rag-stack not installed at /opt/rag-stack — WebUI repoint skipped."
     fi
     ok "Open WebUI -> ${webui_target}  (http://localhost:${WEBUI_PORT})"
 }
@@ -2167,10 +2147,12 @@ fi
 # All tooling lives in https://github.com/dktaylor/rag-stack.
 # This step clones it to /opt/rag-stack-src and runs its install.sh, which:
 #   - Deploys the compose file + MCP server to /opt/rag-stack
+#   - Creates /opt/rag-stack/data/{qdrant,webui} (bind-mounted host dirs; immune to docker volume prune)
 #   - Installs 'rag' CLI to /usr/local/bin
 #   - Installs rag-stack.service (disabled; started on demand with 'rag start')
 #   - Removes any conflicting standalone open-webui container
 # The stack is NOT started here — run 'rag start' after first boot.
+# On first 'rag start', bootstrap auto-provisions the admin account + API key.
 # ==============================================================================
 echo "[46] Deploying rag-stack..."
 echo "=============================================="
