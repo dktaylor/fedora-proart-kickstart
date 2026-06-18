@@ -1593,7 +1593,10 @@ fi
 
 # --- systemd drop-in: pin to CUDA dGPU, set conservative memory limits ---
 # CUDA_VISIBLE_DEVICES=0   → Ollama talks to the RTX 4060, not CPU/iGPU
-# OLLAMA_HOST=127.0.0.1    → listen only on localhost (Tailscale handles remote)
+# OLLAMA_HOST=0.0.0.0      → listen on all interfaces so Docker containers
+#                            (rag-stack Open WebUI) can reach the host daemon
+#                            via host.docker.internal. External access is still
+#                            blocked by firewalld (only docker zone allows 11434).
 # OLLAMA_KEEP_ALIVE=5m     → release VRAM after 5 min idle (laptop battery)
 # OLLAMA_MAX_LOADED_MODELS=1 → don't hold multiple models in VRAM simultaneously
 mkdir -p /etc/systemd/system/ollama.service.d
@@ -1603,13 +1606,19 @@ Environment="LD_LIBRARY_PATH=/usr/local/lib/ollama/cuda_v12:/usr/lib64"
 Environment="CUDA_VISIBLE_DEVICES=0"
 Environment="OLLAMA_GPU_OVERHEAD=268435456"
 Environment="OLLAMA_KV_CACHE_TYPE=q4_0"
-Environment="OLLAMA_HOST=127.0.0.1:11434"
+Environment="OLLAMA_HOST=0.0.0.0"
 Environment="OLLAMA_KEEP_ALIVE=5m"
 Environment="OLLAMA_MAX_LOADED_MODELS=1"
 OLLAMACFG
 
 systemctl daemon-reload
 systemctl enable --now ollama 2>/dev/null || true
+
+# Allow Docker containers to reach host Ollama on port 11434.
+# Without this, firewalld blocks the docker bridge (172.17.0.0/16) from
+# connecting to the host even though Ollama listens on 0.0.0.0.
+firewall-cmd --permanent --zone=docker --add-port=11434/tcp
+firewall-cmd --reload
 
 echo "  Waiting for Ollama daemon to be ready..."
 for i in $(seq 1 30); do
