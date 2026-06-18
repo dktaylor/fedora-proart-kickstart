@@ -1641,37 +1641,17 @@ else
 fi
 
 echo "=============================================="
-echo "[43] Installing Open WebUI (RAG frontend)..."
+echo "[43] Open WebUI — managed by rag-stack (step 46)"
 echo "=============================================="
-# Open WebUI provides the chat UI, document upload, embedding, and RAG
-# retrieval on top of Ollama. Runs as a Docker container with a named volume
-# so the RAG store + settings survive container restarts and image updates.
+# Open WebUI is deployed and managed by the rag-stack compose stack (step 46).
+# It runs alongside Qdrant as a compose service with a named volume for
+# persistent data and embedding configuration.
 #
-# Port 3000 → Open WebUI (internal port 8080).
-# OLLAMA_BASE_URL starts pointing at localhost (local mode); ollama-backend.sh
-# repoints it to the desktop when switching to remote mode.
+# Port 3000 → Open WebUI (container port 8080)
+# Ollama endpoint toggled via: ollama-backend local|remote
 #
-# IMPORTANT: the container uses host.docker.internal to reach host Ollama in
-# local mode. This resolves to the host gateway via --add-host below.
-
-WEBUI_CONTAINER="open-webui"
-WEBUI_PORT="3000"
-
-if docker inspect "$WEBUI_CONTAINER" >/dev/null 2>&1; then
-    echo "  Open WebUI container already exists, skipping creation."
-    echo "  To update: docker rm -f open-webui && re-run this section."
-else
-    docker pull ghcr.io/open-webui/open-webui:main
-    docker run -d \
-        -p "${WEBUI_PORT}:8080" \
-        --add-host=host.docker.internal:host-gateway \
-        -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
-        -v open-webui:/app/backend/data \
-        --name "$WEBUI_CONTAINER" \
-        --restart unless-stopped \
-        ghcr.io/open-webui/open-webui:main
-    echo "  Open WebUI started on http://localhost:${WEBUI_PORT}"
-fi
+# No action needed here — step 46 handles installation and startup.
+echo "  Skipped — rag-stack (step 46) manages Open WebUI via docker compose."
 
 echo "=============================================="
 echo "[44] Installing Ollama backend-toggle scripts..."
