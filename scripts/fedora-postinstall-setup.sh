@@ -1732,17 +1732,33 @@ EOF
 reachable() { have curl && curl -fsS --max-time 5 "$1/api/tags" >/dev/null 2>&1; }
 
 reconfigure_webui() {
-    local base_url="$1"; shift; local extra=("$@")
+    local base_url="$1"
     have docker || return 0
     docker info >/dev/null 2>&1 || { warn "Docker not running; skipping WebUI repoint."; return 0; }
-    docker inspect "$WEBUI_CONTAINER" >/dev/null 2>&1 && docker rm -f "$WEBUI_CONTAINER" >/dev/null
-    docker run -d -p "${WEBUI_PORT}:8080" "${extra[@]}" \
-        -e OLLAMA_BASE_URL="$base_url" \
-        -v open-webui:/app/backend/data \
-        --name "$WEBUI_CONTAINER" --restart unless-stopped \
-        "$WEBUI_IMAGE" >/dev/null \
-        && ok "Open WebUI -> ${base_url}  (http://localhost:${WEBUI_PORT})" \
-        || warn "Open WebUI restart failed."
+    local compose_file="/opt/rag-stack/docker-compose.yml"
+    local env_file="/opt/rag-stack/.env"
+    if [[ -f "$compose_file" ]]; then
+        # rag-stack compose-managed — update .env and recreate open-webui only
+        if [[ -f "$env_file" ]]; then
+            grep -q "^OLLAMA_BASE_URL=" "$env_file" \
+                && sed -i "s|^OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=${base_url}|" "$env_file" \
+                || echo "OLLAMA_BASE_URL=${base_url}" >> "$env_file"
+        fi
+        docker compose -f "$compose_file" up -d --force-recreate open-webui >/dev/null 2>&1 \
+            && ok "Open WebUI -> ${base_url}  (http://localhost:${WEBUI_PORT})" \
+            || warn "Open WebUI restart failed."
+    else
+        # Fallback: standalone container (rag-stack not installed)
+        docker inspect "$WEBUI_CONTAINER" >/dev/null 2>&1 && docker rm -f "$WEBUI_CONTAINER" >/dev/null
+        docker run -d -p "${WEBUI_PORT}:8080" \
+            --add-host=host.docker.internal:host-gateway \
+            -e OLLAMA_BASE_URL="$base_url" \
+            -v open-webui:/app/backend/data \
+            --name "$WEBUI_CONTAINER" --restart unless-stopped \
+            "$WEBUI_IMAGE" >/dev/null \
+            && ok "Open WebUI -> ${base_url}  (http://localhost:${WEBUI_PORT})" \
+            || warn "Open WebUI restart failed."
+    fi
 }
 
 current_state() { [[ -f "$STATE_FILE" ]] && cat "$STATE_FILE" || echo "unknown"; }
@@ -1752,7 +1768,7 @@ go_local() {
     systemctl is-active ollama.service >/dev/null 2>&1 \
         || warn "Local ollama.service not running — start with: sudo systemctl enable --now ollama"
     write_endpoint "$LOCAL_URL"
-    reconfigure_webui "http://host.docker.internal:11434" --add-host=host.docker.internal:host-gateway
+    reconfigure_webui "http://host.docker.internal:11434"
     echo "local" > "$STATE_FILE"
     ok "CLI endpoint: ${LOCAL_URL}  (source ${ENDPOINT_FILE} for this shell)"
     notify "Ollama: LOCAL" "RTX 4060 on this laptop"
@@ -1766,10 +1782,13 @@ go_remote() {
     reachable "$DESKTOP_URL" && ok "Desktop reachable." || \
         warn "Desktop NOT reachable at ${DESKTOP_URL} — is it on? Tailscale up? Ollama serving?"
     write_endpoint "$DESKTOP_URL"
-    local extra=()
-    [[ -n "$DESKTOP_IP" ]] && extra=(--add-host="${DESKTOP_HOST}:${DESKTOP_IP}") \
-        || warn "DESKTOP_IP not set in $CONF — WebUI container may not resolve '${DESKTOP_HOST}'"
-    reconfigure_webui "$DESKTOP_URL" "${extra[@]}"
+    # Use IP directly so the Open WebUI container doesn't need to resolve the
+    # Tailscale MagicDNS hostname (Docker's internal resolver can't see it).
+    local webui_url
+    [[ -n "$DESKTOP_IP" ]] \
+        && webui_url="http://${DESKTOP_IP}:${DESKTOP_PORT}" \
+        || { warn "DESKTOP_IP not set in $CONF — WebUI may not resolve '${DESKTOP_HOST}'"; webui_url="$DESKTOP_URL"; }
+    reconfigure_webui "$webui_url"
     echo "remote" > "$STATE_FILE"
     ok "CLI endpoint: ${DESKTOP_URL}  (source ${ENDPOINT_FILE} for this shell)"
     notify "Ollama: REMOTE" "Desktop over Tailscale"
@@ -1827,7 +1846,7 @@ mkdir -p /etc/systemd/system/ollama.service.d
 cat > /etc/systemd/system/ollama.service.d/override.conf << 'EOF'
 [Service]
 Environment="CUDA_VISIBLE_DEVICES=0"
-Environment="OLLAMA_HOST=127.0.0.1:11434"
+Environment="OLLAMA_HOST=0.0.0.0"
 Environment="OLLAMA_KEEP_ALIVE=5m"
 Environment="OLLAMA_MAX_LOADED_MODELS=1"
 EOF
@@ -1841,13 +1860,22 @@ rm -f /etc/profile.d/ollama-endpoint.sh 2>/dev/null || true
 
 # 3. Repoint WebUI at localhost
 have docker && docker info >/dev/null 2>&1 && {
-    docker inspect "$WEBUI_CONTAINER" >/dev/null 2>&1 && docker rm -f "$WEBUI_CONTAINER" >/dev/null
-    docker run -d -p "${WEBUI_PORT}:8080" \
-        --add-host=host.docker.internal:host-gateway \
-        -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
-        -v open-webui:/app/backend/data \
-        --name "$WEBUI_CONTAINER" --restart unless-stopped \
-        "$WEBUI_IMAGE" >/dev/null
+    compose_file="/opt/rag-stack/docker-compose.yml"
+    env_file="/opt/rag-stack/.env"
+    if [[ -f "$compose_file" ]]; then
+        [[ -f "$env_file" ]] && grep -q "^OLLAMA_BASE_URL=" "$env_file" \
+            && sed -i "s|^OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=http://host.docker.internal:11434|" "$env_file" \
+            || echo "OLLAMA_BASE_URL=http://host.docker.internal:11434" >> "$env_file"
+        docker compose -f "$compose_file" up -d --force-recreate open-webui >/dev/null 2>&1
+    else
+        docker inspect "$WEBUI_CONTAINER" >/dev/null 2>&1 && docker rm -f "$WEBUI_CONTAINER" >/dev/null
+        docker run -d -p "${WEBUI_PORT}:8080" \
+            --add-host=host.docker.internal:host-gateway \
+            -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+            -v open-webui:/app/backend/data \
+            --name "$WEBUI_CONTAINER" --restart unless-stopped \
+            "$WEBUI_IMAGE" >/dev/null
+    fi
     ok "Open WebUI -> localhost:11434  (http://localhost:${WEBUI_PORT})"
 }
 
@@ -1909,16 +1937,27 @@ ok "Shell endpoint -> ${DESKTOP_URL}  (source /etc/profile.d/ollama-endpoint.sh 
 
 # 5. Repoint WebUI at desktop
 have docker && docker info >/dev/null 2>&1 && {
-    local_extra=()
-    [[ -n "$DESKTOP_IP" ]] && local_extra=(--add-host="${DESKTOP_HOST}:${DESKTOP_IP}") \
-        || warn "DESKTOP_IP not set in $CONF — WebUI container may not resolve '${DESKTOP_HOST}'"
-    docker inspect "$WEBUI_CONTAINER" >/dev/null 2>&1 && docker rm -f "$WEBUI_CONTAINER" >/dev/null
-    docker run -d -p "${WEBUI_PORT}:8080" "${local_extra[@]}" \
-        -e OLLAMA_BASE_URL="$DESKTOP_URL" \
-        -v open-webui:/app/backend/data \
-        --name "$WEBUI_CONTAINER" --restart unless-stopped \
-        "$WEBUI_IMAGE" >/dev/null
-    ok "Open WebUI -> ${DESKTOP_URL}  (http://localhost:${WEBUI_PORT})"
+    # Use IP directly so the Open WebUI container can reach the desktop without
+    # needing Tailscale MagicDNS (Docker's resolver doesn't see it).
+    [[ -n "$DESKTOP_IP" ]] \
+        && webui_target="http://${DESKTOP_IP}:${DESKTOP_PORT}" \
+        || { warn "DESKTOP_IP not set in $CONF — WebUI may not resolve '${DESKTOP_HOST}'"; webui_target="$DESKTOP_URL"; }
+    compose_file="/opt/rag-stack/docker-compose.yml"
+    env_file="/opt/rag-stack/.env"
+    if [[ -f "$compose_file" ]]; then
+        [[ -f "$env_file" ]] && grep -q "^OLLAMA_BASE_URL=" "$env_file" \
+            && sed -i "s|^OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=${webui_target}|" "$env_file" \
+            || echo "OLLAMA_BASE_URL=${webui_target}" >> "$env_file"
+        docker compose -f "$compose_file" up -d --force-recreate open-webui >/dev/null 2>&1
+    else
+        docker inspect "$WEBUI_CONTAINER" >/dev/null 2>&1 && docker rm -f "$WEBUI_CONTAINER" >/dev/null
+        docker run -d -p "${WEBUI_PORT}:8080" \
+            -e OLLAMA_BASE_URL="$webui_target" \
+            -v open-webui:/app/backend/data \
+            --name "$WEBUI_CONTAINER" --restart unless-stopped \
+            "$WEBUI_IMAGE" >/dev/null
+    fi
+    ok "Open WebUI -> ${webui_target}  (http://localhost:${WEBUI_PORT})"
 }
 
 # 6. GPU switch last
