@@ -5,7 +5,8 @@
 # Usage:
 #   sudo ./scripts/write-usb.sh /dev/sdX                  # ISO + flatpak data
 #   sudo ./scripts/write-usb.sh /dev/sdX --no-flatpaks    # ISO only
-#   sudo ./scripts/write-usb.sh /dev/sdX --flatpaks-only  # re-populate data only
+#   sudo ./scripts/write-usb.sh /dev/sdX --no-ssh         # skip SSH key copy
+#   sudo ./scripts/write-usb.sh /dev/sdX --flatpaks-only  # re-populate data only (includes SSH)
 #   sudo ./scripts/write-usb.sh /dev/sdX --mode=manual    # use manual-partitioning ISO
 #
 # What it does:
@@ -37,6 +38,7 @@ DEVICE=""
 MODE="auto"
 DO_ISO=1
 DO_FLATPAKS=1
+DO_SSH=1
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -57,6 +59,7 @@ for arg in "$@"; do
         /dev/*)          DEVICE="$arg" ;;
         --mode=*)        MODE="${arg#--mode=}" ;;
         --no-flatpaks)   DO_FLATPAKS=0 ;;
+        --no-ssh)        DO_SSH=0 ;;
         --flatpaks-only) DO_ISO=0 ;;
         -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -25; exit 0 ;;
         *) die "Unknown argument: $arg" ;;
@@ -67,8 +70,8 @@ done
 [[ -b "$DEVICE" ]]    || die "Not a block device: $DEVICE"
 [[ "$EUID" -eq 0 ]]   || die "Must run as root (sudo $0 ...)"
 
-# VM ISOs don't need flatpaks (skipped by VM_INSTALL=1 during install)
-[[ "$MODE" == "vm" ]] && DO_FLATPAKS=0
+# VM ISOs don't need flatpaks or SSH keys (skipped by VM_INSTALL=1 during install)
+[[ "$MODE" == "vm" ]] && DO_FLATPAKS=0 && DO_SSH=0
 
 # ── Select ISO ────────────────────────────────────────────────────────────────
 case "$MODE" in
@@ -101,6 +104,10 @@ if [[ "$DO_FLATPAKS" -eq 1 ]]; then
     printf "  Flatpaks (%d apps):\n" "${#FLATPAK_APPS[@]}"
     for app in "${FLATPAK_APPS[@]}"; do printf "    %s\n" "$app"; done
 fi
+if [[ "$DO_SSH" -eq 1 ]]; then
+    _SSH_USER="${SUDO_USER:-$USER}"
+    printf "  SSH keys: from %s/.ssh/\n" "$(getent passwd "$_SSH_USER" | cut -d: -f6)"
+fi
 echo ""
 printf "Type the device name to confirm (%s): " "$DEVICE"
 read -r CONFIRM
@@ -130,7 +137,7 @@ if [[ "$DO_ISO" -eq 1 ]]; then
 fi
 
 # ── Phase 2: FEDORA_DATA partition ────────────────────────────────────────────
-if [[ "$DO_FLATPAKS" -eq 1 ]]; then
+if [[ "$DO_FLATPAKS" -eq 1 || "$DO_SSH" -eq 1 ]]; then
     # Locate existing FEDORA_DATA or create it
     DATA_PART=$(blkid -L FEDORA_DATA 2>/dev/null || true)
 
@@ -165,38 +172,65 @@ if [[ "$DO_FLATPAKS" -eq 1 ]]; then
         ok "FEDORA_DATA already exists: $DATA_PART — updating contents"
     fi
 
-    # ── Phase 3: Bundle Flatpaks via flatpak create-usb ───────────────────────
-    command -v flatpak >/dev/null 2>&1 || die "flatpak not found"
-
     MOUNT_TMP=$(mktemp -d)
     trap "umount '$MOUNT_TMP' 2>/dev/null || true; rm -rf '$MOUNT_TMP'" EXIT
-
     mount "$DATA_PART" "$MOUNT_TMP"
-    mkdir -p "$MOUNT_TMP/flatpaks"
 
-    info "Bundling ${#FLATPAK_APPS[@]} Flatpak app(s) with flatpak create-usb..."
-    MISSING=()
-    for app in "${FLATPAK_APPS[@]}"; do
-        if flatpak info "$app" >/dev/null 2>&1; then
-            info "  Bundling $app..."
-            flatpak create-usb "$MOUNT_TMP/flatpaks" "$app"
-            ok "$app"
-        else
-            MISSING+=("$app")
-            warn "$app not installed locally — skipping"
+    # ── Phase 3: Bundle Flatpaks via flatpak create-usb ───────────────────────
+    if [[ "$DO_FLATPAKS" -eq 1 ]]; then
+        command -v flatpak >/dev/null 2>&1 || die "flatpak not found"
+        mkdir -p "$MOUNT_TMP/flatpaks"
+        info "Bundling ${#FLATPAK_APPS[@]} Flatpak app(s) with flatpak create-usb..."
+        MISSING=()
+        for app in "${FLATPAK_APPS[@]}"; do
+            if flatpak info "$app" >/dev/null 2>&1; then
+                info "  Bundling $app..."
+                flatpak create-usb "$MOUNT_TMP/flatpaks" "$app"
+                ok "$app"
+            else
+                MISSING+=("$app")
+                warn "$app not installed locally — skipping"
+            fi
+        done
+        if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo ""
+            warn "${#MISSING[@]} app(s) were not installed locally and were skipped:"
+            for app in "${MISSING[@]}"; do warn "  flatpak install flathub $app"; done
+            warn "Install them then re-run: sudo $0 $DEVICE --flatpaks-only"
         fi
-    done
+    fi
+
+    # ── Phase 4: Copy SSH keys from invoking user's ~/.ssh/ ───────────────────
+    # Uses SUDO_USER (the real user who ran sudo) so we get their keys, not root's.
+    # Covers: private keys, public keys, authorized_keys.
+    # On the target install, kickstart %post step 18 reads these from FEDORA_DATA.
+    # This preserves existing SSH identity across reinstalls — no need to re-add
+    # keys to GitHub, Bitbucket, etc. after a fresh Fedora install.
+    if [[ "$DO_SSH" -eq 1 ]]; then
+        _SSH_USER="${SUDO_USER:-$USER}"
+        _SSH_SRC="$(getent passwd "$_SSH_USER" | cut -d: -f6)/.ssh"
+        mkdir -p "$MOUNT_TMP/ssh"
+        _SSH_COPIED=0
+        info "Copying SSH keys from $_SSH_SRC (user: $_SSH_USER)..."
+        for _kf in id_ed25519 id_ed25519.pub id_rsa id_rsa.pub id_ecdsa id_ecdsa.pub authorized_keys; do
+            if [[ -f "$_SSH_SRC/$_kf" ]]; then
+                cp "$_SSH_SRC/$_kf" "$MOUNT_TMP/ssh/$_kf"
+                chmod 600 "$MOUNT_TMP/ssh/$_kf"
+                ok "  $_kf"
+                (( _SSH_COPIED++ )) || true
+            fi
+        done
+        if [[ "$_SSH_COPIED" -eq 0 ]]; then
+            warn "No SSH key files found in $_SSH_SRC"
+            warn "Generate one with: ssh-keygen -t ed25519 -C \"devuser@fedora-dev\""
+        else
+            ok "$_SSH_COPIED SSH file(s) written to FEDORA_DATA/ssh/"
+        fi
+    fi
 
     umount "$MOUNT_TMP"
     trap - EXIT
     rm -rf "$MOUNT_TMP"
-
-    if [[ ${#MISSING[@]} -gt 0 ]]; then
-        echo ""
-        warn "${#MISSING[@]} app(s) were not installed locally and were skipped:"
-        for app in "${MISSING[@]}"; do warn "  flatpak install flathub $app"; done
-        warn "Install them then re-run: sudo $0 $DEVICE --flatpaks-only"
-    fi
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -205,6 +239,7 @@ echo "${B}========================================================${X}"
 echo " USB ready: $DEVICE"
 [[ "$DO_ISO" -eq 1 ]]      && echo "  ISO:     $ISO"
 [[ "$DO_FLATPAKS" -eq 1 ]] && echo "  Flatpaks: FEDORA_DATA partition (${#FLATPAK_APPS[@]} apps)"
+[[ "$DO_SSH" -eq 1 ]]      && echo "  SSH keys: FEDORA_DATA/ssh/ (from ${SUDO_USER:-$USER})"
 echo ""
 echo " Boot from this USB to install Fedora 44."
 echo "${B}========================================================${X}"
