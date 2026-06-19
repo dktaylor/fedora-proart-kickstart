@@ -149,7 +149,7 @@ ok "ISO ready: $VM_ISO ($(du -h "$VM_ISO" | cut -f1))"
 
 # ── Remove existing VM if present ─────────────────────────────────────────────
 if virsh dominfo "$VM_NAME" >/dev/null 2>&1; then
-    warn "VM '$VM_NAME' already exists — removing it first"
+    warn "VM $VM_NAME already exists — removing it first"
     virsh destroy  "$VM_NAME" 2>/dev/null || true
     virsh undefine "$VM_NAME" --remove-all-storage 2>/dev/null || true
 fi
@@ -178,14 +178,14 @@ echo "${B}============================================================${X}"
 echo ""
 echo " Monitor progress:"
 echo "   virt-manager                    # GUI (recommended)"
-echo "   virsh console $VM_NAME   # text console (Ctrl+] to exit)"
+echo "   virsh console ${VM_NAME}   # text console (Ctrl+] to exit)"
 echo "   Switch to debug shell: Ctrl+Alt+F2 in virt-manager"
 echo "   Switch back to GUI:    Ctrl+Alt+F1"
 echo ""
 echo " After install completes, the VM will reboot automatically."
 echo " Then run verify.sh inside the VM:"
 echo "   ssh devuser@\$(virsh domifaddr $VM_NAME | awk '/ipv4/{print \$4}' | cut -d/ -f1) \\"
-echo "     'bash ~/Projects/fedora-proart-kickstart/scripts/verify.sh --no-hw'"
+echo "     'bash ~/Projects/fedora-proart-kickstart/scripts/verify.sh --no-hw --no-gaming'"
 echo ""
 echo " To destroy the VM when done:"
 echo "   sudo ./testing/test-vm.sh --destroy"

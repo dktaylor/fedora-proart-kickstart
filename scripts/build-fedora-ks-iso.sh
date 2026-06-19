@@ -87,6 +87,10 @@ for iso_path in /boot/grub2/grub.cfg /EFI/BOOT/grub.cfg; do
     fi
     # Inject kickstart boot parameter after inst.stage2=
     sed -i 's|\(inst\.stage2=[^ ]*\)|\1 inst.ks=cdrom:/ks.cfg|g' "$local_file"
+    # For VM mode: inject vm_install=1 so %post can read it from /proc/cmdline
+    if [[ "$MODE" == "vm" ]]; then
+        sed -i 's|\(inst\.ks=cdrom:/ks\.cfg\)|\1 vm_install=1|g' "$local_file"
+    fi
     grep -q "inst.ks" "$local_file" \
         && ok "Patched $iso_path" \
         || warn "sed matched nothing in $iso_path — check grub.cfg format"

@@ -19,18 +19,21 @@
 #   ./verify.sh              # full report
 #   ./verify.sh --quiet      # only show FAIL lines + summary
 #   ./verify.sh --no-hw      # force-skip all hardware checks (pure VM mode)
+#   ./verify.sh --no-gaming  # skip gaming checks (Steam/Heroic/etc not installed in VM)
 # ==============================================================================
 
 set -uo pipefail
 
 QUIET=0
 FORCE_NO_HW=0
+FORCE_NO_GAMING=0
 for arg in "$@"; do
     case "$arg" in
-        --quiet)  QUIET=1 ;;
-        --no-hw)  FORCE_NO_HW=1 ;;
+        --quiet)     QUIET=1 ;;
+        --no-hw)     FORCE_NO_HW=1 ;;
+        --no-gaming) FORCE_NO_GAMING=1 ;;
         -h|--help)
-            grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -n 22; exit 0 ;;
+            grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -n 23; exit 0 ;;
     esac
 done
 
@@ -202,12 +205,21 @@ check_cmd deno "Deno"
 
 # ----- gaming -----
 hdr "Gaming"
-check_any "Steam" steam steam-runtime || check_rpm steam "Steam"
-check_flatpak com.heroicgameslauncher.hgl "Heroic (Flatpak)"
-check_cmd lutris "Lutris"
-check_any "GameMode" gamemoded gamemode
-check_any "MangoHud" mangohud
-check_flatpak net.davidotek.pupgui2 "ProtonUp-Qt (Flatpak)" 2>/dev/null || skip "ProtonUp-Qt — flatpak not found (optional)"
+if [[ "$FORCE_NO_GAMING" -eq 1 ]]; then
+    skip "Steam — skipped (--no-gaming)"
+    skip "Heroic — skipped (--no-gaming)"
+    skip "Lutris — skipped (--no-gaming)"
+    skip "GameMode — skipped (--no-gaming)"
+    skip "MangoHud — skipped (--no-gaming)"
+    skip "ProtonUp-Qt — skipped (--no-gaming)"
+else
+    check_any "Steam" steam steam-runtime || check_rpm steam "Steam"
+    check_flatpak com.heroicgameslauncher.hgl "Heroic (Flatpak)"
+    check_cmd lutris "Lutris"
+    check_any "GameMode" gamemoded gamemode
+    check_any "MangoHud" mangohud
+    check_flatpak net.davidotek.pupgui2 "ProtonUp-Qt (Flatpak)" 2>/dev/null || skip "ProtonUp-Qt — flatpak not found (optional)"
+fi
 
 # ----- networking / infra tools -----
 hdr "Networking & infra"
