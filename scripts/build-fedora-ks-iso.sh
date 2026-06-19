@@ -8,8 +8,12 @@
 #   ./scripts/build-fedora-ks-iso.sh vm         # VM testing (vda, clearpart --all)
 #
 # Requirements:
-#   - xorriso and mkisofs (dnf install xorriso)
+#   - xorriso (dnf install xorriso)
 #   - The Fedora 44 Everything ISO already downloaded
+#
+# Approach: use xorriso to splice files into the original ISO while replaying
+# its boot catalog verbatim. This preserves UEFI + legacy BIOS bootability
+# without needing to mount, rsync, or repack with mkisofs.
 # ==============================================================================
 
 set -uo pipefail
@@ -44,8 +48,9 @@ case "$MODE" in
 esac
 
 [[ -f "$KS_FILE" ]] || die "Kickstart not found: $KS_FILE"
+command -v xorriso >/dev/null 2>&1 || die "xorriso not found — run: sudo dnf install xorriso"
 
-# Find the ISO (check multiple locations)
+# Find the ISO
 ORIGINAL_ISO=""
 for path in "$ISO_DIR/Fedora-Everything-netinst-x86_64-44-1.7.iso" \
             "$WORK_DIR/Fedora-Everything-netinst-x86_64-44-1.7.iso" \
@@ -55,75 +60,76 @@ for path in "$ISO_DIR/Fedora-Everything-netinst-x86_64-44-1.7.iso" \
         break
     fi
 done
-
 [[ -n "$ORIGINAL_ISO" ]] || die "Fedora 44 ISO not found. Place it in ./iso/ directory."
 ok "ISO: $(basename "$ORIGINAL_ISO")"
 ok "KS:  $(basename "$KS_FILE")"
 
-# Create temp work directory
-BUILD_DIR=$(mktemp -d)
-trap "rm -rf '$BUILD_DIR'" EXIT
+# Temp dir for modified grub configs (avoid clobbering $TMPDIR env var)
+WORK_TMP=$(mktemp -d)
+trap "rm -rf '$WORK_TMP'" EXIT
 
-info "Extracting ISO..."
-# Mount the ISO read-only
-MOUNT_POINT=$(mktemp -d)
-trap "sudo umount -l '$MOUNT_POINT' 2>/dev/null; rmdir '$MOUNT_POINT' 2>/dev/null; sudo rm -rf '$BUILD_DIR'" EXIT
-
-sudo mount -o loop,ro "$ORIGINAL_ISO" "$MOUNT_POINT" 2>/dev/null || die "Failed to mount ISO"
-ok "ISO mounted"
-
-# Use sudo rsync to copy everything
-sudo rsync -a "$MOUNT_POINT/" "$BUILD_DIR/" 2>&1 | tail -5
-
-# Fix permissions so we can modify files
-sudo chown -R "$USER:$USER" "$BUILD_DIR" 2>/dev/null || true
-
-sudo umount -l "$MOUNT_POINT" 2>/dev/null || true
-
-# This is a UEFI-only netinstall ISO (no isolinux), verify we have boot configs
-[[ -f "$BUILD_DIR/boot/grub2/grub.cfg" ]] || die "Extract failed: no boot/grub2/grub.cfg found"
-ok "ISO extracted"
-
-# Inject kickstart
-info "Injecting kickstart..."
-cp "$KS_FILE" "$BUILD_DIR/ks.cfg"
-ok "Kickstart added"
-
-# Modify boot configs to auto-load kickstart
-# For UEFI netinstall: modify grub.cfg files
-for grub_cfg in "$BUILD_DIR/boot/grub2/grub.cfg" "$BUILD_DIR/EFI/BOOT/grub.cfg"; do
-    if [[ -f "$grub_cfg" ]]; then
-        # Append kickstart option to boot lines
-        sed -i 's|\(inst\.stage2=[^ ]*\)|\1 inst.ks=cdrom:/ks.cfg|g' "$grub_cfg" 2>/dev/null || true
+# Extract grub configs from the original ISO, patch them, then splice back in
+info "Patching boot configs..."
+for iso_path in /boot/grub2/grub.cfg /EFI/BOOT/grub.cfg; do
+    local_name="${iso_path//\//_}"          # /boot/grub2/grub.cfg → _boot_grub2_grub.cfg
+    local_file="$WORK_TMP/$local_name"
+    # Extract silently; skip if the file doesn't exist in this ISO
+    xorriso -indev "$ORIGINAL_ISO" -osirrox on -extract "$iso_path" "$local_file" -- 2>/dev/null || true
+    [[ -f "$local_file" ]] || { warn "Not found in ISO: $iso_path (skipping)"; continue; }
+    # Set default to entry 0 (Install) instead of 1 (Test media & install)
+    sed -i 's/^set default="1"/set default="0"/' "$local_file"
+    # Reduce GRUB timeout from 60s to 10s
+    sed -i 's/^set timeout=.*/set timeout=10/' "$local_file"
+    # For VM mode: replace hd:LABEL= stage2 search with cdrom so dracut finds the
+    # ISO immediately rather than waiting for the IDE CD-ROM to enumerate by label.
+    if [[ "$MODE" == "vm" ]]; then
+        sed -i 's|inst\.stage2=hd:LABEL=[^ ]*|inst.stage2=cdrom|g' "$local_file"
     fi
+    # Inject kickstart boot parameter after inst.stage2=
+    sed -i 's|\(inst\.stage2=[^ ]*\)|\1 inst.ks=cdrom:/ks.cfg|g' "$local_file"
+    grep -q "inst.ks" "$local_file" \
+        && ok "Patched $iso_path" \
+        || warn "sed matched nothing in $iso_path — check grub.cfg format"
 done
-ok "Boot configs modified"
 
-# Build ISO
-info "Building ISO..."
+# Build new ISO: start from original, splice in ks.cfg + patched grub configs,
+# replay the original boot catalog so UEFI and legacy BIOS both work.
+info "Building ISO (xorriso splice)..."
 rm -f "$OUTPUT"
 
-cd "$BUILD_DIR" || die "cd failed"
+XORRISO_ARGS=(
+    -indev  "$ORIGINAL_ISO"
+    -outdev "$OUTPUT"
+    -map    "$KS_FILE" /ks.cfg
+    -chmod  0444 /ks.cfg --
+)
 
-# For UEFI netinstall ISO: simple approach without EFI boot images
-# The EFI firmware will find boot files via the EFI directory structure
-mkisofs -o "$OUTPUT" \
-    -J -R \
-    -V "Fedora-44" \
-    . 2>&1 | tail -5
+# Add patched grub configs if we produced them
+for iso_path in /boot/grub2/grub.cfg /EFI/BOOT/grub.cfg; do
+    local_name="${iso_path//\//_}"
+    local_file="$WORK_TMP/$local_name"
+    [[ -f "$local_file" ]] && XORRISO_ARGS+=(-map "$local_file" "$iso_path")
+done
 
-echo "Checking if ISO was created..."
-ls -lh "$OUTPUT" 2>&1
+XORRISO_ARGS+=(-boot_image any replay)
 
-cd - >/dev/null
+xorriso "${XORRISO_ARGS[@]}" 2>&1 | grep -E "^xorriso|ERROR|WARNING|Added|Replaced|writing|done\." || true
 
 if [[ -f "$OUTPUT" && -s "$OUTPUT" ]]; then
     ok "ISO created: $OUTPUT"
     ok "Size: $(du -h "$OUTPUT" | cut -f1)"
 else
-    echo "File exists: $(test -f "$OUTPUT" && echo yes || echo no)"
-    echo "File size: $(stat -c%s "$OUTPUT" 2>/dev/null || echo unknown)"
-    die "ISO build check failed"
+    die "ISO build failed — output missing or empty"
+fi
+
+# Embed MD5 checksum so Anaconda's media check passes
+if command -v implantisomd5 >/dev/null 2>&1; then
+    info "Embedding ISO checksum..."
+    implantisomd5 "$OUTPUT"
+    ok "Checksum embedded"
+else
+    warn "implantisomd5 not found — media check will show 'NA' (install still works)"
+    warn "Install: sudo dnf install isomd5sum"
 fi
 
 echo ""
