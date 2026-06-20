@@ -106,10 +106,10 @@ Hardware checks (Nvidia, AMD, Asus) auto-SKIP when the hardware isn't detected, 
 
 ## Ollama / RAG stack
 
-- **Model**: `qwen3:8b` (local, Q4_K_M, 5.2 GB), `qwen2.5-coder:7b-instruct-q8_0` (desktop)
 - **Ollama daemon**: port 11434, systemd service with CUDA drop-in (`/etc/systemd/system/ollama.service.d/override.conf`)
-- **Open WebUI**: Docker container, port 3000
-- **Config**: `/etc/ollama-backend.conf` — set `DESKTOP_IP` here (run `tailscale ip -4` on desktop)
+- **Open WebUI**: Docker container, port 3000 — managed via `rag start/stop` (`/usr/local/bin/rag`)
+- **RAG config**: `/opt/rag-stack/.env` and `~/Projects/rag-stack/models.conf`
+- **Backend toggle**: `/etc/ollama-backend.conf` — set `DESKTOP_IP` here (run `tailscale ip -4` on desktop)
 
 Switch inference backends:
 ```bash
