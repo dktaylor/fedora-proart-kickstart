@@ -107,9 +107,9 @@ if ! virsh net-info "$LIBVIRT_NET" >/dev/null 2>&1; then
     warn "default network not defined — creating from template"
     virsh net-define /usr/share/libvirt/networks/default.xml
 fi
-if ! virsh net-info "$LIBVIRT_NET" 2>/dev/null | grep -q "^Active:.*yes"; then
+if [[ "$(virsh net-info "$LIBVIRT_NET" 2>/dev/null | awk '/^Active:/{print $2}')" != "yes" ]]; then
     info "Starting libvirt default network..."
-    virsh net-start "$LIBVIRT_NET" || true
+    virsh net-start "$LIBVIRT_NET" 2>/dev/null || true
 fi
 virsh net-autostart "$LIBVIRT_NET" >/dev/null 2>&1 || true
 ok "libvirt default network active"
