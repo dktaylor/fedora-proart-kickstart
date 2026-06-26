@@ -1380,6 +1380,26 @@ if rpm -q qemu-kvm libvirt virt-install >/dev/null 2>&1; then
     echo "[36b] Enabling libvirtd (KVM/QEMU)..."
     systemctl enable libvirtd
     usermod -aG libvirt devuser
+
+    # Fedora 44: firewalld's libvirt zone ships a catch-all reject rule in
+    # filter_IN_libvirt_post / filter_OUT_libvirt_post that blocks DHCP and
+    # ICMP from VMs even though the zone explicitly allows those services.
+    # Remove it permanently so VM networking works out of the box.
+    firewall-cmd --zone=libvirt --remove-rich-rule='rule priority="32767" reject' --permanent 2>/dev/null || true
+    echo "      Removed libvirt zone catch-all reject rule (Fedora 44 firewalld fix)"
+
+    # virt-manager is a GTK app that renders a black screen under KDE Plasma
+    # Wayland. Force it to use XWayland via a desktop entry override.
+    mkdir -p /home/devuser/.local/share/applications
+    cat > /home/devuser/.local/share/applications/virt-manager.desktop << 'DESKTOP'
+[Desktop Entry]
+Name=Virtual Machine Manager
+Exec=env GDK_BACKEND=x11 virt-manager %U
+Icon=virt-manager
+Type=Application
+Categories=System;
+DESKTOP
+    chown devuser:devuser /home/devuser/.local/share/applications/virt-manager.desktop
 else
     echo "[36b] KVM packages not installed — skipping libvirtd enable"
     echo "      Install with: dnf install -y qemu-kvm libvirt virt-install"
