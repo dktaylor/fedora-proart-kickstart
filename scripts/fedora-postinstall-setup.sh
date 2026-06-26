@@ -449,16 +449,16 @@ TOOLBOX_URL=$(curl -s "https://data.services.jetbrains.com/products/releases?cod
     | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['TBA'][0]['downloads']['linux']['link'])")
 
 curl -L "$TOOLBOX_URL" -o /tmp/jetbrains-toolbox.tar.gz
-mkdir -p /opt/jetbrains-toolbox
-tar -xzf /tmp/jetbrains-toolbox.tar.gz -C /tmp/jetbrains-toolbox-extract --strip-components=1 2>/dev/null || \
-    tar -xzf /tmp/jetbrains-toolbox.tar.gz -C /tmp/
-
-# Find and move the binary
-TOOLBOX_BIN=$(find /tmp -name "jetbrains-toolbox" -type f 2>/dev/null | head -1)
-if [ -n "$TOOLBOX_BIN" ]; then
-    install -o root -g root -m 0755 "$TOOLBOX_BIN" /usr/local/bin/jetbrains-toolbox
-fi
-rm -rf /tmp/jetbrains-toolbox* /tmp/jetbrains-toolbox-extract
+# The bundle ships with a bundled JRE and lib/ directory that must stay alongside
+# the binary — extracting only the binary causes a "Failed to start JVM" / missing
+# manifest fatal exit. Install the full bundle to /opt and symlink into PATH.
+mkdir -p /tmp/jetbrains-toolbox-extract
+tar -xzf /tmp/jetbrains-toolbox.tar.gz -C /tmp/jetbrains-toolbox-extract --strip-components=1
+rm -rf /opt/jetbrains-toolbox
+cp -r /tmp/jetbrains-toolbox-extract/. /opt/jetbrains-toolbox/
+chmod 0755 /opt/jetbrains-toolbox/bin/jetbrains-toolbox
+ln -sf /opt/jetbrains-toolbox/bin/jetbrains-toolbox /usr/local/bin/jetbrains-toolbox
+rm -rf /tmp/jetbrains-toolbox*
 
 # Required libs for JetBrains IDEs on Fedora
 dnf install -y \
@@ -470,13 +470,15 @@ dnf install -y \
     libXi \
     mesa-libGL \
     freetype \
-    fontconfig
+    fontconfig \
+    gtk3 \
+    xcb-util-keysyms
 
 # Desktop entry so devuser can launch Toolbox from KDE app menu
 cat > /usr/share/applications/jetbrains-toolbox.desktop << 'DESKTOP'
 [Desktop Entry]
 Name=JetBrains Toolbox
-Exec=/usr/local/bin/jetbrains-toolbox
+Exec=/opt/jetbrains-toolbox/bin/jetbrains-toolbox
 Icon=jetbrains-toolbox
 Type=Application
 Categories=Development;IDE;
